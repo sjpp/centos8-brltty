@@ -1,0 +1,1279 @@
+diff --git a/Headers/datafile.h b/Headers/datafile.h
+index f22457e..eec692c 100644
+--- a/Headers/datafile.h
++++ b/Headers/datafile.h
+@@ -43,6 +43,7 @@ typedef enum {
+ 
+ typedef struct {
+   DataOperandsProcessor *processOperands;
++  void (*logFileName) (const char *name, void *data);
+   void *data;
+   unsigned char options;
+ } DataFileParameters;
+diff --git a/Initramfs/Dracut/Makefile.in b/Initramfs/Dracut/Makefile.in
+new file mode 100644
+index 0000000..8a7f6de
+--- /dev/null
++++ b/Initramfs/Dracut/Makefile.in
+@@ -0,0 +1,34 @@
++MODULE_NAME = 99brltty
++MODULES_DIRECTORY = /usr/lib/dracut/modules.d
++MODULE_DIRECTORY = $(INSTALL_ROOT)$(MODULES_DIRECTORY)/$(MODULE_NAME)
++
++install: install-module install-documentation install-configuration-files
++
++install-module: install-module-directory
++	for file in *.sh; \
++	do $(INSTALL_SCRIPT) $$file $(MODULE_DIRECTORY); \
++	done
++
++install-documentation: install-module-directory
++	$(INSTALL_DATA) README $(MODULE_DIRECTORY)
++
++install-module-directory:
++	$(INSTALL_DIRECTORY) $(MODULE_DIRECTORY)
++
++OPTIONS_FILE = cmdline
++CONFIGURATION_FILE = dracut.conf
++INITRAMFS_SUBDIRECTORY = Initramfs
++INITRAMFS_DIRECTORY = $(TABLES_DIRECTORY)/$(INITRAMFS_SUBDIRECTORY)
++INSTALL_INITRAMFS_DIRECTORY = $(INSTALL_ROOT)$(INITRAMFS_DIRECTORY)
++
++install-initramfs-directory:
++	$(INSTALL_DIRECTORY) $(INSTALL_INITRAMFS_DIRECTORY)
++
++install-configuration-files: install-initramfs-directory
++	$(INSTALL_DATA) $(OPTIONS_FILE) $(INSTALL_INITRAMFS_DIRECTORY)
++	$(INSTALL_DATA) $(CONFIGURATION_FILE) $(INSTALL_INITRAMFS_DIRECTORY)
++	sed -e '/^ *BRLTTY_DRACUT_LOCALE *= *"/s/".*"/"${LANG}"/' -i $(INSTALL_INITRAMFS_DIRECTORY)/$(CONFIGURATION_FILE)
++
++uninstall:
++	-rm -f -r  $(MODULE_DIRECTORY)
++
+diff --git a/Initramfs/Dracut/README b/Initramfs/Dracut/README
+new file mode 100644
+index 0000000..ccf6baa
+--- /dev/null
++++ b/Initramfs/Dracut/README
+@@ -0,0 +1,215 @@
++Braille Support for Dracut
++==========================
++
++This module implements braille accessibility within the initramfs (initial
++ramdisk file system). If BRLTTY is installed (``/usr/bin/brltty`` exists) then
++it is added to the image. The braille drivers, text tables, attributes tables,
++contraction tables, keyboard tables, speech drivers, and preferences file
++configured via ``/etc/brltty.conf`` are included. Local customizations within
++``/etc/xdg/brltty/`` are also included.
++
++BRLTTY is started as early as possible by the initramfs so that braille
++accessibility will be active when (should the need arise) control is
++transferred to the emergency shell due to a problem preparing the root file
++system. Additionally, braille accessibility is active at any of the specifiable
++initramfs breakpoints (see the ``rd.break`` kernel parameter) except for the
++one named ``cmdline`` because it occurs earlier than the point at which BRLTTY
++is started.
++
++The braille driver can start immediately if either serial or USB communication
++is being used. If Bluetooth communication is being used then the braille driver
++won't start until the ``initqueue`` phase because the Systemd service manager
++isn't available until then.
++
++Bluetooth support within the initramfs is disabled by default because it's
++insecure. The reason for this is that the link keys for those devices that have
++already been paired on the full system are copied into the initramfs image so
++that repairing won't be necessary. If you absolutely must use Bluetooth
++communication, or if you just want to and this issue is of no concern to you,
++then enable the ``BRLTTY_DRACUT_BLUETOOTH_SUPPORT`` option within the file
++``dracut.conf`` (which is in ``/etc/brltty/Initramfs/``).
++
++Environment Variables
++---------------------
++
++A number of environment variables may be used to influence how BRLTTY is
++installed into the initramfs image. Their names all begin with the
++``BRLTTY_DRACUT_`` prefix. In addition to exporting them from the current
++environment, they may be defined within the optional file ``dracut.conf``
++(which is in ``/etc/brltty/Initramfs/``). Within this file:
++
++* Blank lines are ignored.
++* Lines that start with a hash [``#``] are comments.
++* All other lines should be simple shell-style assignments. For example::
++
++    NAME="string"
++
++The following environment variables are supported:
++
++BRLTTY_DRACUT_LOCALE
++  The preferred locale (used to determine the default text and contraction
++  tables). For example::
++
++    BRLTTY_DRACUT_LOCALE=cs_CZ.UTF-8
++
++  If needed, i.e. if the text and contraction tables haven't both been
++  configured via ``/etc/brltty.conf``, this information must be explicitly set
++  because it can't be determined from the system configuration when building
++  the image (see `<https://bugzilla.redhat.com/show_bug.cgi?id=1584036>`_).
++
++BRLTTY_DRACUT_BRAILLE_DRIVERS
++  A space-separated list of additional braille drivers to include. For
++  example::
++
++    BRLTTY_DRACUT_BRAILLE_DRIVERS="pm eu"
++
++BRLTTY_DRACUT_BLUETOOTH_SUPPORT
++  Whether or not Bluetooth support should be included within the initramfs. For
++  example::
++
++    BRLTTY_DRACUT_BLUETOOTH_SUPPORT=no
++
++  Set this variable to ``yes`` if communication with your braille device is via
++  Bluetooth. Note that this option is insecure because the link keys for all of
++  your paired Bluetooth devices will be stored within the initramfs image.
++
++BRLTTY_DRACUT_TEXT_TABLES
++  A space-separated list of additional text tables to include. For example::
++
++    BRLTTY_DRACUT_TEXT_TABLES="de fr"
++
++BRLTTY_DRACUT_ATTRIBUTES_TABLES
++  A space-separated list of additional attributes tables to include. For
++  example::
++
++    BRLTTY_DRACUT_ATTRIBUTES_TABLES="upper_lower left_right"
++
++BRLTTY_DRACUT_CONTRACTION_TABLES
++  A space-separated list of additional contraction tables to include. For
++  example::
++
++    BRLTTY_DRACUT_CONTRACTION_TABLES="de-kurzschrift fr-abrege"
++
++BRLTTY_DRACUT_KEYBOARD_TABLES
++  A space-separated list of additional keyboard tables to include. For
++  example::
++
++    BRLTTY_DRACUT_KEYBOARD_TABLES="keypad desktop"
++
++BRLTTY_DRACUT_SPEECH_DRIVERS
++  A space-separated list of additional speech drivers to include. For example::
++
++    BRLTTY_DRACUT_SPEECH_DRIVERS="es fl"
++
++Kernel Command Line Parameters
++------------------------------
++
++This module interprets kernel command line parameters that begin with the
++``rd.brltty.`` prefix. Explicit values for these parameters can, of course, be
++specified on the kernel command line (e.g. within ``grub.cfg`` or within
++``/etc/default/grub``). In addition, default values for them can be defined
++within the optional file ``cmdline`` (which is in ``/etc/brltty/Initramfs/``).
++
++The order of precedence, from lowest to highest, for a value is:
++
++* BRLTTY built-in default
++* ``/etc/brltty.conf``
++* initramfs override
++* ``/etc/brltty/Initramfs/cmdline``
++* kernel command line
++
++Blank lines are ignored. A hash [``#``] anywhere on a line begins a comment
++which continues till the end of that line - only those characters before it are
++significant. Any number of space-separated options may be specified on a line.
++The syntax for an option is ``name=value`` (without the ``rd.brltty.`` prefix).
++The ``=value`` part is optional - if there's no ``=`` then the value is
++``yes``.
++
++Disabling BRLTTY
++````````````````
++
++Given that BRLTTY is a rather complex application, there are a number of kernel
++parameters that can be used to selectively disable a number of its components.
++In all cases, if any of these parameters isn't specified then it defaults to
++``1`` (enabled). They are:
++
++  =========================  =========================================
++  Kernel Parameter           Effect
++  -------------------------  -----------------------------------------
++  ``rd.brltty=0``            Completely disable BRLTTY.
++  ``rd.brltty.bluetooth=0``  Disable Bluetooth support.
++  ``rd.brltty.sound=0``      Disable speech drivers and sound support.
++  ``rd.brltty.pulse=0``      Disable the Pulse Audio server.
++  ``rd.brltty.speechd=0``    Disable the Speech Dispatcher server.
++  =========================  =========================================
++
++Specifying BRLTTY options
++`````````````````````````
++
++All of BRLTTY's options that can be specified via environment variables (see
++``man brltty`` for the full list) can be specified via kernel parameters. For
++example, the kernel parameter ``rd.brltty.braille_driver=vo`` is mapped to the
++environment variable assignment ``BRLTTY_BRAILLE_DRIVER=vo``. Some of the more
++interesting ones are:
++
++  ================================  ===============================
++  Kernel Parameter                  Default Value
++  --------------------------------  -------------------------------
++  ``rd.brltty.braille_driver``      setting in ``/etc/brltty.conf``
++  ``rd.brltty.braille_parameters``  setting in ``/etc/brltty.conf``
++  ``rd.brltty.braille_device``      setting in ``/etc/brltty.conf``
++  ``rd.brltty.text_table``          setting in ``/etc/brltty.conf``
++  ``rd.brltty.attributes_table``    setting in ``/etc/brltty.conf``
++  ``rd.brltty.contraction_table``   setting in ``/etc/brltty.conf``
++  ``rd.brltty.keyboard_table``      setting in ``/etc/brltty.conf``
++  ``rd.brltty.speech_driver``       setting in ``/etc/brltty.conf``
++  ``rd.brltty.speech_parameters``   setting in ``/etc/brltty.conf``
++  ``rd.brltty.log_file``            ``/run/initramfs/brltty.log``
++  ``rd.brltty.log_level``           setting in ``/etc/brltty.conf``
++  ================================  ===============================
++
++Speech Drivers
++--------------
++
++Since speech drivers, by their very nature, require sound:
++
++* None of them can start until the ``initqueue`` hook has been executed.
++
++* None of them can start if sound has been disabled (via the rd.brltty.sound=0
++  kernel parameter).
++
++Speech defaults to being off even if a speech driver has been configured via
++``/etc/brltty.conf``. This is because your preferred speech driver may not work
++all that well, or may even cause problems, when used within the more primitive
++initramfs environment. If you'd like to use speech then you need to explicitly
++set the driver. While you can do so via the ``rd.brltty.speech_driver`` kernel
++command line parameter, the easiest way to configure a persistent setting is
++via the ``speech_driver`` option in ``/etc/brltty/Initramfs/cmdline``.
++
++Here's how well each of the speech drivers works:
++
++en
++  The ``en`` [eSpeak-NG] speech driver works.
++
++es
++  The ``es`` [eSpeak] speech driver works. It requires Pulse Audio, so:
++
++  * It doesn't start until the ``initqueue`` hook has been executed.
++
++  * It can't start if Pulse Audio fails to start or has been disabled (via
++    the rd.brltty.pulse=0 kernel parameter).
++
++fl
++  The ``fl`` [Festival Lite] speech driver doesn't work - it runs but doesn't
++  speak. This appears to be due to a bug within Festival Lite itself because
++  it also remains silent when tested on the full system.
++
++fv
++  The ``fv`` [Festival] speech driver doesn't work - it crashes. This appears
++  to be due to a bug within Festival itself because it also crashes when tested
++  on the full system.
++
++sd
++  The ``sd`` [Speech Dispatcher] speech driver hasn't been tested and probably
++  won't work.
++
+diff --git a/Initramfs/Dracut/alsa-start.sh b/Initramfs/Dracut/alsa-start.sh
+new file mode 100755
+index 0000000..26ab4a1
+--- /dev/null
++++ b/Initramfs/Dracut/alsa-start.sh
+@@ -0,0 +1,5 @@
++#!/bin/bash
++
++getargbool 1 rd.brltty && getargbool 1 rd.brltty.sound && {
++   alsaunmute
++}
+diff --git a/Initramfs/Dracut/bluetooth-start.sh b/Initramfs/Dracut/bluetooth-start.sh
+new file mode 100755
+index 0000000..0d574d1
+--- /dev/null
++++ b/Initramfs/Dracut/bluetooth-start.sh
+@@ -0,0 +1,7 @@
++#!/bin/bash
++
++getargbool 1 rd.brltty && getargbool 1 rd.brltty.bluetooth && {
++   systemctl -q is-active bluetooth || {
++      systemctl --no-block start bluetooth
++   }
++}
+diff --git a/Initramfs/Dracut/brltty-start.sh b/Initramfs/Dracut/brltty-start.sh
+new file mode 100755
+index 0000000..ea51437
+--- /dev/null
++++ b/Initramfs/Dracut/brltty-start.sh
+@@ -0,0 +1,78 @@
++#!/bin/bash
++
++export BRLTTY_START_MESSAGE="initramfs starting"
++export BRLTTY_STOP_MESSAGE="initramfs finished"
++
++BRLTTY_OVERRIDE_PREFERENCE="braille-keyboard-enabled=yes"
++BRLTTY_OVERRIDE_PREFERENCE+=",braille-input-mode=text"
++export BRLTTY_OVERRIDE_PREFERENCE
++
++export BRLTTY_SCREEN_DRIVER="lx"
++export BRLTTY_SPEECH_DRIVER="no"
++
++export BRLTTY_WRITABLE_DIRECTORY="/run"
++export BRLTTY_PID_FILE="${BRLTTY_WRITABLE_DIRECTORY}/brltty.pid"
++export BRLTTY_LOG_FILE="${BRLTTY_WRITABLE_DIRECTORY}/initramfs/brltty.log"
++
++export BRLTTY_UPDATABLE_DIRECTORY="/etc"
++export BRLTTY_PREFERENCES_FILE="${BRLTTY_UPDATABLE_DIRECTORY}/brltty.prefs"
++
++brlttySetOption() {
++   local option="${1}"
++   local name="${option%%=*}"
++
++   if [ "${name}" = "${option}" ]
++   then
++      local value="yes"
++   else
++      local value="${option#*=}"
++   fi
++
++   [ -z "${name}" ] || {
++      name="${name^^?}"
++      export "BRLTTY_${name}=${value}"
++   }
++}
++
++brlttySetConfiguredOptions() {
++   local file="/etc/brltty/Initramfs/cmdline"
++
++   [ -f "${file}" ] && [ -r "${file}" ] && {
++      local line
++
++      while read line
++      do
++         set -- ${line%%#*}
++         local option
++
++         for option
++         do
++            brlttySetOption "${option}"
++         done
++      done <"${file}"
++   }
++}
++
++brlttySetExplicitOptions() {
++   local option
++
++   for option
++   do
++      [[ "${option}" =~ ^"rd.brltty."(.*) ]] && {
++         brlttySetOption "${BASH_REMATCH[1]}"
++      }
++   done
++}
++
++brlttySetConfiguredOptions
++brlttySetExplicitOptions $(getcmdline)
++getargbool 1 rd.brltty.sound || export BRLTTY_SPEECH_DRIVER="no"
++
++getargbool 1 rd.brltty && (
++   # Give the kernel a bit of time to finish creating the /dev/input/ devices
++   # (e.g. so that brltty can perform keyboard discovery for keyboard tables)
++   # without delaying the boot.
++
++   sleep 1
++   brltty -E +n
++) &
+diff --git a/Initramfs/Dracut/brltty-stop.sh b/Initramfs/Dracut/brltty-stop.sh
+new file mode 100755
+index 0000000..27611ab
+--- /dev/null
++++ b/Initramfs/Dracut/brltty-stop.sh
+@@ -0,0 +1,3 @@
++#!/bin/bash
++
++brltty -E -C
+diff --git a/Initramfs/Dracut/cmdline b/Initramfs/Dracut/cmdline
+new file mode 100644
+index 0000000..39aefd3
+--- /dev/null
++++ b/Initramfs/Dracut/cmdline
+@@ -0,0 +1,16 @@
++# This file is where you can specify any rd.brltty. kernel parameters that are
++# to be included within the initramfs image and applied as default values.
++
++# The order of precedence, from lowest to highest, for an option's value is:
++# * BRLTTY built-in default
++# * /etc/brltty.conf
++# * initramfs override
++# * this file
++# * kernel command line
++
++# Blank lines are ignored. A hash [#] anywhere on a line begins a comment which
++# continues till the end of that line - only those characters before it are
++# significant. Any number of space-separated options may be specified on a
++# line. The syntax for an option is name=value (without the rd.brltty. prefix).
++# The =value part is optional - if there's no = then the value is yes.
++
+diff --git a/Initramfs/Dracut/dbus-start.sh b/Initramfs/Dracut/dbus-start.sh
+new file mode 100755
+index 0000000..fd9e210
+--- /dev/null
++++ b/Initramfs/Dracut/dbus-start.sh
+@@ -0,0 +1,7 @@
++#!/bin/bash
++
++getargbool 1 rd.brltty && getargbool 1 rd.brltty.bluetooth && {
++   systemctl -q is-active dbus || {
++      systemctl --no-block start dbus
++   }
++}
+diff --git a/Initramfs/Dracut/dracut.conf b/Initramfs/Dracut/dracut.conf
+new file mode 100644
+index 0000000..2d03996
+--- /dev/null
++++ b/Initramfs/Dracut/dracut.conf
+@@ -0,0 +1,27 @@
++# The preferred locale (used to determine the default text and contraction tables).
++BRLTTY_DRACUT_LOCALE=""
++
++# A space-separated list of additional braille drivers to include.
++BRLTTY_DRACUT_BRAILLE_DRIVERS=""
++
++# Whether or not Bluetooth support should be included within the initramfs.
++# Set this variable to yes if communication with your braille device is via
++# Bluetooth. Note that this option is insecure because the link keys for all of
++# your paired Bluetooth devices will be stored within the initramfs image.
++BRLTTY_DRACUT_BLUETOOTH_SUPPORT=no
++
++# A space-separated list of additional text tables to include.
++BRLTTY_DRACUT_TEXT_TABLES=""
++
++# A space-separated list of additional attributes tables to include.
++BRLTTY_DRACUT_ATTRIBUTES_TABLES=""
++
++# A space-separated list of additional contraction tables to include.
++BRLTTY_DRACUT_CONTRACTION_TABLES=""
++
++# A space-separated list of additional keyboard tables to include.
++BRLTTY_DRACUT_KEYBOARD_TABLES=""
++
++# A space-separated list of additional speech drivers to include.
++BRLTTY_DRACUT_SPEECH_DRIVERS=""
++
+diff --git a/Initramfs/Dracut/module-setup.sh b/Initramfs/Dracut/module-setup.sh
+new file mode 100755
+index 0000000..8f6e5ca
+--- /dev/null
++++ b/Initramfs/Dracut/module-setup.sh
+@@ -0,0 +1,326 @@
++#!/bin/bash
++
++# called by dracut
++check() {
++   require_binaries brltty brltty-lsinc || return 1
++   return 0
++}
++
++# called by dracut
++depends() {
++   return 0
++}
++
++# called by dracut
++installkernel() {
++   instmods pcspkr uinput
++   [ -d "${initdir}/etc/bluetooth" ] && instmods =drivers/bluetooth =net/bluetooth
++   [ -d "${initdir}/etc/alsa" ] && instmods =sound
++   return 0
++}
++
++# called by dracut
++install() {
++   brlttyImportInstallOptions
++   local -A includedDrivers
++
++   local BRLTTY_EXECUTABLE_PATH="/usr/bin/brltty"
++   inst_binary "${BRLTTY_EXECUTABLE_PATH}"
++   local brlttyLog="$(LC_ALL="${BRLTTY_DRACUT_LOCALE:-${LANG}}" "${BRLTTY_EXECUTABLE_PATH}" -E -v -e -ldebug 2>&1)"
++   
++   export BRLTTY_CONFIGURATION_FILE="/etc/brltty.conf"
++   brlttyIncludeDataFiles "${BRLTTY_CONFIGURATION_FILE}"
++
++   brlttyIncludeDataFiles $(brlttyGetProperty "including data file")
++   brlttyIncludeScreenDrivers lx
++
++   brlttyIncludeBrailleDrivers $(brlttyGetConfiguredDrivers braille)
++   brlttyIncludeBrailleDrivers ${BRLTTY_DRACUT_BRAILLE_DRIVERS}
++
++   brlttyIncludeSpeechDrivers $(brlttyGetConfiguredDrivers speech)
++   brlttyIncludeSpeechDrivers ${BRLTTY_DRACUT_SPEECH_DRIVERS}
++      
++   brlttyIncludeTables Text        ttb ${BRLTTY_DRACUT_TEXT_TABLES}
++   brlttyIncludeTables Attributes  atb ${BRLTTY_DRACUT_ATTRIBUTES_TABLES}
++   brlttyIncludeTables Contraction ctb ${BRLTTY_DRACUT_CONTRACTION_TABLES}
++   brlttyIncludeTables Keyboard    ktb ${BRLTTY_DRACUT_KEYBOARD_TABLES}
++
++   brlttyInstallPreferencesFile "/etc/brltty.prefs"
++   brlttyInstallDirectories "/etc/xdg/brltty"
++   inst_simple "/etc/brltty/Initramfs/cmdline"
++
++   if [ "${BRLTTY_DRACUT_BLUETOOTH_SUPPORT}" = "yes" ]
++   then
++      brlttyIncludeBluetoothSupport
++   fi
++
++   inst_hook cmdline 05 "${moddir}/brltty-start.sh"
++   inst_hook cleanup 95 "${moddir}/brltty-stop.sh"
++
++   dracut_need_initqueue
++}
++
++brlttyInstallPreferencesFile() {
++   local path="${1}"
++   local file=$(brlttyGetProperty "Preferences File")
++
++   if [ -n "${file}" ]
++   then
++      if [ "${file}" = "${file#/}" ]
++      then
++         local directory=$(brlttyGetProperty "Updatable Directory")
++
++         if [ -n "${directory}" ]
++         then
++            file="${directory}/${file}"
++         fi
++      fi
++
++      if [ -f "${file}" ]
++      then
++         inst_simple "${file}" "${path}"
++      fi
++   fi
++}
++
++brlttyIncludeBrailleDrivers() {
++   local code
++
++   for code
++   do
++      brlttyIncludeDriver b "${code}" || continue
++
++      local directory="/etc/brltty/Input/${code}"
++      brlttyIncludeDataFiles "${directory}/"*.ktb
++      inst_multiple -o "${directory}/"*.txt
++   done
++}
++
++brlttyIncludeSpeechDrivers() {
++   local code
++
++   for code
++   do
++      brlttyIncludeDriver s "${code}" || continue
++
++      case "${code}"
++      in
++         en)
++            inst_binary espeak-ng
++            brlttyInstallDirectories "/usr/share/espeak-ng-data"
++            ;;
++
++         es)
++            inst_binary espeak
++            brlttyInstallDirectories "/usr/share/espeak-data"
++            brlttyIncludePulseAudioSupport
++            ;;
++
++         fl)
++            inst_binary flite
++            ;;
++
++         fv)
++            inst_binary festival
++            brlttyInstallDirectories /etc/festival
++            brlttyInstallDirectories /usr/lib*/festival
++            brlttyInstallDirectories /usr/share/festival/lib
++            ;;
++
++         sd)
++            inst_binary speech-dispatcher
++            brlttyInstallDirectories /etc/speech-dispatcher
++            brlttyInstallDirectories /usr/lib*/speech-dispatcher
++            brlttyInstallDirectories /usr/lib*/speech-dispatcher-modules
++            brlttyInstallDirectories /usr/share/speech-dispatcher
++            brlttyInstallDirectories /usr/share/sounds/speech-dispatcher
++            brlttyInstallSystemdUnits speech-dispatcherd.service
++            inst_hook initqueue 98 "${moddir}/speechd-start.sh"
++            ;;
++      esac
++
++      brlttyIncludeAlsaSupport
++   done
++}
++
++brlttyIncludeScreenDrivers() {
++   local code
++
++   for code
++   do
++      brlttyIncludeDriver x "${code}" || continue
++   done
++}
++
++brlttyIncludeDriver() {
++   local type="${1}"
++   local code="${2}"
++
++   [ "${code}" = "no" ] && return 1
++   local driver="${type}${code}"
++
++   [ -n "${includedDrivers[${driver}]}" ] && return 2
++   includedDrivers[${driver}]=1
++
++   inst_libdir_file "brltty/libbrltty${driver}.so*"
++   return 0
++}
++
++brlttyIncludeTables() {
++   local subdirectory="${1}"
++   local extension="${2}"
++   shift 2
++   local name
++
++   for name
++   do
++      brlttyIncludeDataFiles "/etc/brltty/${subdirectory}/${name}.${extension}"
++   done
++}
++
++brlttyIncludeDataFiles() {
++   local file
++
++   while read -r file
++   do
++      inst_simple "${file}"
++   done < <(brltty-lsinc "${@}")
++}
++
++brlttyGetConfiguredDrivers() {
++   local category="${1}"
++   brlttyGetProperty "checking for ${category} driver"
++}
++
++brlttyGetProperty() {
++   local name="${1}"
++   echo "${brlttyLog}" | awk "/: *${name} *:/ {print \$NF}"
++}
++
++brlttyImportInstallOptions() {
++   local file="/etc/brltty/Initramfs/dracut.conf"
++   [ -f "${file}" ] && [ -r "${file}" ] && . "${file}"
++}
++
++brlttyIncludePulseAudioSupport() {
++   [ -d "${initdir}/etc/pulse" ] && return 0
++
++   brlttyInstallDirectories /etc/pulse
++   brlttyInstallDirectories /usr/share/pulseaudio
++   brlttyInstallDirectories /usr/lib*/pulseaudio
++   brlttyInstallDirectories /usr/lib*/pulse-*
++   brlttyInstallDirectories /usr/libexec/pulse
++
++   inst_multiple -o pulseaudio pactl pacmd
++   inst_multiple -o pamon paplay parec parecord
++
++   brlttyAddUserEntries pulse
++   brlttyAddGroupEntries pulse pulse-access pulse-rt
++
++   brlttyIncludeAlsaSupport
++   brlttyIncludeMessageBusSupport
++   inst_simple /etc/dbus-1/system.d/pulseaudio-system.conf
++
++   inst_binary chmod
++   inst_hook initqueue 97 "${moddir}/pulse-start.sh"
++   inst_hook cleanup 98 "${moddir}/pulse-stop.sh"
++}
++
++brlttyIncludeAlsaSupport() {
++   [ -d "${initdir}/etc/alsa" ] && return 0;
++
++   brlttyInstallDirectories /etc/alsa
++   rm -f "${initdir}/etc/alsa/conf.d/"*
++
++   brlttyInstallDirectories /usr/share/alsa
++   brlttyInstallDirectories /usr/lib/alsa
++   brlttyInstallDirectories /usr/lib*/alsa-lib
++
++   inst_multiple -o alsactl alsaucm alsamixer amixer aplay
++   inst_script alsaunmute
++
++   inst_hook initqueue 96 "${moddir}/alsa-start.sh"
++}
++
++brlttyIncludeBluetoothSupport() {
++   [ -d "${initdir}/etc/bluetooth" ] && return 0
++
++   brlttyInstallDirectories /etc/bluetooth
++   brlttyInstallDirectories /var/lib/bluetooth
++
++   inst_multiple -o bluetoothctl hciconfig hcitool sdptool
++   inst_binary /usr/libexec/bluetooth/bluetoothd
++   brlttyInstallSystemdUnits bluetooth.service bluetooth.target
++
++   inst_hook initqueue 97 "${moddir}/bluetooth-start.sh"
++   brlttyIncludeMessageBusSupport
++}
++
++brlttyIncludeMessageBusSupport() {
++   [ -d "${initdir}/etc/dbus-1" ] && return 0
++
++   brlttyAddMessageBusUsers /usr/share/dbus-1/system.d/*
++   brlttyAddMessageBusUsers /etc/dbus-1/system.d/*
++
++   brlttyInstallDirectories /etc/dbus-1
++   brlttyInstallDirectories /usr/share/dbus-1
++   brlttyInstallDirectories /usr/libexec/dbus-1
++
++   inst_multiple dbus-daemon dbus-send dbus-cleanup-sockets dbus-monitor
++   brlttyInstallSystemdUnits dbus.service dbus.socket
++
++   inst_hook initqueue 96 "${moddir}/dbus-start.sh"
++}
++
++brlttyAddMessageBusUsers() {
++   set -- dbus $(sed -n -r -e 's/^.* user="([^"]*)".*$/\1/p' "${@}" | sort -u)
++   brlttyAddUserEntries "${@}"
++   brlttyAddGroupEntries "${@}"
++}
++
++brlttyAddUserEntries() {
++   brlttyAddEntries passwd "${@}"
++}
++
++brlttyAddGroupEntries() {
++   brlttyAddEntries group "${@}"
++}
++
++brlttyAddEntries() {
++   local file="${1}"
++   shift 1
++
++   local source="/etc/${file}"
++   local target="${initdir}${source}"
++   local name
++
++   for name
++   do
++      grep -q -e "^${name}:" "${target}" || {
++         local line="$(grep "^${name}:" "${source}")"
++         [ -n "${line}" ] && echo >>"${target}" "${line}"
++      }
++   done
++}
++
++brlttyInstallSystemdUnits() {
++   local unit
++
++   for unit
++   do
++      inst_simple "/usr/lib/systemd/system/${unit}"
++   done
++}
++
++brlttyInstallDirectories() {
++   local directory
++
++   for directory
++   do
++      [ -d "${directory}" ] && {
++         eval set -- $(find "${directory}" -printf "'%p'\n")
++         inst_multiple "${@}"
++      }
++   done
++}
++
+diff --git a/Initramfs/Dracut/pulse-start.sh b/Initramfs/Dracut/pulse-start.sh
+new file mode 100755
+index 0000000..ed9af36
+--- /dev/null
++++ b/Initramfs/Dracut/pulse-start.sh
+@@ -0,0 +1,5 @@
++#!/bin/bash
++
++getargbool 1 rd.brltty && getargbool 1 rd.brltty.sound && getargbool 1 rd.brltty.pulse && {
++   chmod a+w /tmp && pulseaudio --daemonize=yes --system --disallow-exit --disallow-module-loading --disable-shm
++}
+diff --git a/Initramfs/Dracut/pulse-stop.sh b/Initramfs/Dracut/pulse-stop.sh
+new file mode 100755
+index 0000000..5f2b033
+--- /dev/null
++++ b/Initramfs/Dracut/pulse-stop.sh
+@@ -0,0 +1,3 @@
++#!/bin/bash
++
++read </run/pulse/pid pid && kill -0 "${pid}" && kill -KILL "${pid}"
+diff --git a/Initramfs/Dracut/speechd-start.sh b/Initramfs/Dracut/speechd-start.sh
+new file mode 100755
+index 0000000..4467c27
+--- /dev/null
++++ b/Initramfs/Dracut/speechd-start.sh
+@@ -0,0 +1,7 @@
++#!/bin/bash
++
++getargbool 1 rd.brltty && getargbool 1 rd.brltty.sound && getargbool 1 rd.brltty.speechd && {
++   systemctl -q is-active speech-dispatcherd || {
++      systemctl --no-block start speech-dispatcherd
++   }
++}
+diff --git a/Makefile.in b/Makefile.in
+index d722215..103af51 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -22,14 +22,17 @@ all install uninstall install-documents:
+ install-messages uninstall-messages:
+ 	cd $(MSG_DIR) && $(MAKE) $(@:-messages=)
+ 
++install-appstream uninstall-appstream:
++	cd Autostart/AppStream && $(MAKE) $(@:-appstream=)
++
+ install-systemd uninstall-systemd:
+ 	cd Autostart/Systemd && $(MAKE) $(@:-systemd=)
+ 
+ install-udev uninstall-udev:
+ 	cd Autostart/Udev && $(MAKE) $(@:-udev=)
+ 
+-install-appstream uninstall-appstream:
+-	cd Autostart/AppStream && $(MAKE) $(@:-appstream=)
++install-dracut uninstall-dracut:
++	cd Initramfs/Dracut && $(MAKE) $(@:-dracut=)
+ 
+ ARCHIVE_NAME = $(PACKAGE_TARNAME)-$(PACKAGE_VERSION)
+ TAR_EXTENSION = tar
+@@ -95,9 +98,10 @@ ITERATE = \
+    -for directory in \
+    $(PGM_DIR) \
+    $(MSG_DIR) \
++   Autostart/AppStream \
+    Autostart/Systemd \
+    Autostart/Udev \
+-   Autostart/AppStream \
++   Initramfs/Dracut \
+    Android/Application \
+    ; do (cd $$directory && $(MAKE) $@); done
+ 
+diff --git a/Programs/Makefile.in b/Programs/Makefile.in
+index 0016035..c6d66f4 100644
+--- a/Programs/Makefile.in
++++ b/Programs/Makefile.in
+@@ -16,8 +16,9 @@
+ # This software is maintained by Dave Mielke <dave@mielke.cc>.
+ ###############################################################################
+ 
+-all: all-brltty all-brltty-trtxt all-brltty-ttb all-brltty-atb $(ALL_BRLTTY_CTB) all-brltty-ktb all-brltty-tune $(ALL_XBRLAPI) $(ALL_API_BINDINGS)
++all: all-brltty all-brltty-lsinc all-brltty-trtxt all-brltty-ttb all-brltty-atb $(ALL_BRLTTY_CTB) all-brltty-ktb all-brltty-tune $(ALL_XBRLAPI) $(ALL_API_BINDINGS)
+ all-brltty: brltty$X $(BRAILLE_DRIVERS) $(SPEECH_DRIVERS) $(SCREEN_DRIVERS)
++all-brltty-lsinc: brltty-lsinc$X
+ all-brltty-trtxt: brltty-trtxt$X
+ all-brltty-ttb: brltty-ttb$X
+ all-brltty-atb: brltty-atb$X
+@@ -805,6 +806,16 @@ brltty-trtxt.$O:
+ 
+ ###############################################################################
+ 
++BRLTTY_LSINC_OBJECTS = brltty-lsinc.$O $(PROGRAM_OBJECTS)
++
++brltty-lsinc$X: $(BRLTTY_LSINC_OBJECTS)
++	$(CC) $(LDFLAGS) -o $@ $(BRLTTY_LSINC_OBJECTS) $(LDLIBS)
++
++brltty-lsinc.$O:
++	$(CC) $(CFLAGS) -c $(SRC_DIR)/brltty-lsinc.c
++
++###############################################################################
++
+ BRLTEST_OBJECTS = brltest.$O $(PROGRAM_OBJECTS) report.$O $(TTB_OBJECTS) $(KTB_OBJECTS) dataarea.$O cmd.$O cmd_queue.$O drivers.$O driver.$O $(BRAILLE_OBJECTS) $(PREFS_OBJECTS) hidkeys.$O learn.$O
+ 
+ brltest$X: $(BRLTEST_OBJECTS)
+@@ -949,8 +960,9 @@ check-all: check-text-tables check-attributes-tables check-contraction-tables ch
+ 
+ install:: install-programs install-tables $(INSTALL_DRIVERS) install-core-headers $(INSTALL_MESSAGES) install-manpages $(INSTALL_API)
+ 
+-install-programs: brltty$X brltty-trtxt$X brltty-ttb$X brltty-atb$X $(INSTALL_BRLTTY_CTB) brltty-ktb$X brltty-tune$X install-program-directory install-writable-directory
++install-programs: brltty$X brltty-lsinc$X brltty-trtxt$X brltty-ttb$X brltty-atb$X $(INSTALL_BRLTTY_CTB) brltty-ktb$X brltty-tune$X install-program-directory install-writable-directory
+ 	$(INSTALL_PROGRAM) brltty$X $(INSTALL_PROGRAM_DIRECTORY) 
++	$(INSTALL_PROGRAM) brltty-lsinc$X $(INSTALL_PROGRAM_DIRECTORY) 
+ 	$(INSTALL_PROGRAM) brltty-trtxt$X $(INSTALL_PROGRAM_DIRECTORY) 
+ 	$(INSTALL_PROGRAM) brltty-ttb$X $(INSTALL_PROGRAM_DIRECTORY) 
+ 	$(INSTALL_PROGRAM) brltty-atb$X $(INSTALL_PROGRAM_DIRECTORY) 
+@@ -1136,6 +1148,7 @@ distclean clean::
+ 
+ clean::
+ 	-rm -f brltty$X brltty-trtxt$X brltty-ttb$X brltty-atb$X brltty-ctb$X brltty-tune$X xbrlapi$X
++	-rm -f brltty$X brltty-lsinc$X brltty-trtxt$X brltty-ttb$X brltty-atb$X brltty-ctb$X brltty-tune$X xbrlapi$X
+ 	-rm -f tbl2hex$(X_FOR_BUILD) *test$X *-static$X
+ 	-rm -f brlapi_constants.h *.$(LIB_EXT) *.$(LIB_EXT).* *.$(ARC_EXT) *.def *.class *.jar
+ 	-rm -f $(BLD_TOP)$(DRV_DIR)/*
+diff --git a/Programs/brltty-lsinc.c b/Programs/brltty-lsinc.c
+new file mode 100644
+index 0000000..9d2b026
+--- /dev/null
++++ b/Programs/brltty-lsinc.c
+@@ -0,0 +1,119 @@
++/*
++ * BRLTTY - A background process providing access to the console screen (when in
++ *          text mode) for a blind person using a refreshable braille display.
++ *
++ * Copyright (C) 1995-2018 by The BRLTTY Developers.
++ *
++ * BRLTTY comes with ABSOLUTELY NO WARRANTY.
++ *
++ * This is free software, placed under the terms of the
++ * GNU Lesser General Public License, as published by the Free Software
++ * Foundation; either version 2.1 of the License, or (at your option) any
++ * later version. Please see the file LICENSE-LGPL for details.
++ *
++ * Web Page: http://brltty.app/
++ *
++ * This software is maintained by Dave Mielke <dave@mielke.cc>.
++ */
++
++#include "prologue.h"
++
++#include <stdio.h>
++#include <string.h>
++#include <search.h>
++
++#include "log.h"
++#include "program.h"
++#include "options.h"
++#include "file.h"
++
++BEGIN_OPTION_TABLE(programOptions)
++END_OPTION_TABLE
++
++static void
++noMemory (void) {
++  fprintf(stderr, "%s: insufficient memory\n", programName);
++  exit(PROG_EXIT_FATAL);
++}
++
++static int
++compareStrings (const void *string1, const void *string2) {
++  return strcmp(string1, string2);
++}
++
++static void
++logFileName (const char *name, void *data) {
++  static void *namesTree = NULL;
++
++  if (!tfind(name, &namesTree, compareStrings)) {
++    name = strdup(name);
++    if (!name) noMemory();
++    if (!tsearch(name, &namesTree, compareStrings)) noMemory();
++    printf("%s\n", name);
++  }
++}
++
++static DATA_CONDITION_TESTER(testConditionOperand) {
++  return 1;
++}
++
++static DATA_OPERANDS_PROCESSOR(processUnknownDirective) {
++  DataOperand directive;
++
++  if (getDataOperand(file, &directive, NULL)) {
++    if (directive.length >= 2) {
++      if (isKeyword(WS_C("if"), directive.characters, 2)) {
++        return processConditionOperands(file, testConditionOperand, 0, NULL, data);
++      }
++    }
++  }
++
++  return 1;
++}
++
++static DATA_OPERANDS_PROCESSOR(processOperands) {
++  BEGIN_DATA_DIRECTIVE_TABLE
++    DATA_NESTING_DIRECTIVES,
++    DATA_CONDITION_DIRECTIVES,
++    DATA_VARIABLE_DIRECTIVES,
++    {NULL, processUnknownDirective},
++  END_DATA_DIRECTIVE_TABLE
++
++  return processDirectiveOperand(file, &directives, "attributes table directive", data);
++}
++
++int
++main (int argc, char *argv[]) {
++  {
++    static const OptionsDescriptor descriptor = {
++      OPTION_TABLE(programOptions),
++      .applicationName = "brltty-lsinc",
++      .argumentsSummary = "[file ...]"
++    };
++
++    PROCESS_OPTIONS(descriptor, argc, argv);
++  }
++
++  if (argc == 0) {
++    logMessage(LOG_ERR, "missing table file.");
++    return PROG_EXIT_SYNTAX;
++  }
++
++  do {
++    const char *path = *argv++;
++    argc -= 1;
++
++    const DataFileParameters parameters = {
++      .processOperands = processOperands,
++      .logFileName = logFileName
++    };
++
++    if (testProgramPath(path)) {
++      logFileName(path, parameters.data);
++    } else {
++      processDataFile(path, &parameters);
++    }
++  } while (argc);
++
++  return PROG_EXIT_SUCCESS;
++}
+diff --git a/Programs/datafile.c b/Programs/datafile.c
+index e70deb5..48235e6 100644
+--- a/Programs/datafile.c
++++ b/Programs/datafile.c
+@@ -1262,9 +1262,14 @@ processDataStream (
+   FILE *stream, const char *name,
+   const DataFileParameters *parameters
+ ) {
+-  logMessage(LOG_DEBUG, "including data file: %s", name);
+   int ok = 0;
+ 
++  if (parameters->logFileName) {
++    parameters->logFileName(name, parameters->data);
++  } else {
++    logMessage(LOG_DEBUG, "including data file: %s", name);
++  }
++
+   DataFile file = {
+     .name = name,
+     .parameters = parameters,
+diff --git a/brltty.spec.in b/brltty.spec.in
+index f5aa33d..1ac2ebf 100644
+--- a/brltty.spec.in
++++ b/brltty.spec.in
+@@ -339,6 +339,7 @@ BuildArch: noarch
+ 
+ AutoProv: no
+ AutoReq: yes
++Requires: systemd
+ 
+ Summary: Systemd units and wrappers for BRLTTY.
+ %description -n brltty-systemd
+@@ -356,6 +357,7 @@ BuildArch: noarch
+ 
+ AutoProv: no
+ AutoReq: yes
++Requires: systemd-udev
+ 
+ Summary: Udev rules for BRLTTY.
+ %description -n brltty-udev
+@@ -364,6 +366,25 @@ This package provides the rules and wrapper for managing BRLTTY via Udev.
+ Install this package if you'd like to manage BRLTTY processes via Udev.
+ 
+ 
++%package -n brltty-dracut
++Version: @PACKAGE_VERSION@
++Release: 1
++Group: System Environment/Daemons
++License: LGPL
++BuildArch: noarch
++
++AutoProv: no
++AutoReq: yes
++Requires: dracut
++Requires: brltty-utils
++
++Summary: Dracut module for BRLTTY.
++%description -n brltty-dracut
++This package provides the module for adding BRLTTY to an initial ramdisk image.
++
++Install this package if you'd like to have braille accessibility BRLTTY processes via Udev.
++
++
+ %package -n brlapi
+ Version: @api_release@
+ Release: 1
+@@ -382,6 +403,26 @@ Install this package if you have an application
+ which directly accesses a refreshable braille display.
+ 
+ 
++%package -n brlapi-utils
++Version: @api_release@
++Release: 1
++Group: Applications/System
++License: LGPL
++
++Requires: libX11
++
++BuildRequires: xorg-x11-proto-devel
++BuildRequires: libX11-devel
++BuildRequires: libXtst-devel
++
++AutoProv: no
++AutoReq: yes
++
++Summary: Appliation Programming Interface for BRLTTY.
++%description -n brlapi-utils
++This package provides a set of commands that use the BrlAPI interface.
++
++
+ %package -n brlapi-devel
+ Version: @api_release@
+ Release: 1
+@@ -489,26 +530,6 @@ Install this package if you have a Tcl application
+ which directly accesses a refreshable braille display.
+ 
+ 
+-%package -n brlapi-utils
+-Version: @api_release@
+-Release: 1
+-Group: Applications/System
+-License: LGPL
+-
+-Requires: libX11
+-
+-BuildRequires: xorg-x11-proto-devel
+-BuildRequires: libX11-devel
+-BuildRequires: libXtst-devel
+-
+-AutoProv: no
+-AutoReq: yes
+-
+-Summary: Appliation Programming Interface for BRLTTY.
+-%description -n brlapi-utils
+-This package provides a set of commands for maintaining BRLTTY's datafiles.
+-
+-
+ %prep
+ # %setup -n %{name}-%{version}
+ %setup -n @PACKAGE_TARNAME@-@PACKAGE_VERSION@
+@@ -518,8 +539,13 @@ This package provides a set of commands for maintaining BRLTTY's datafiles.
+ make
+ 
+ %install
+-make install install-documents install-messages
+-make install-systemd install-udev install-appstream
++make install
++make install-documents
++make install-messages
++make install-appstream
++make install-systemd
++make install-udev
++make install-dracut
+ install -m 644 Documents/brltty.conf "${RPM_BUILD_ROOT}%{_sysconfdir}"
+ %find_lang %{name}
+ 
+@@ -542,6 +568,7 @@ rm -fr "${RPM_BUILD_ROOT}"
+ %exclude %{_libdir}/brltty/libbrlttyxa2.so
+ %exclude %{_libdir}/brltty/libbrlttyxsc.so
+ %{_sysconfdir}/brltty
++%exclude %{_sysconfdir}/brltty/dracut.conf
+ %{_datadir}/metainfo/org.a11y.brltty.metainfo.xml
+ %doc %{_mandir}/man1/brltty.1.gz
+ %doc %{_docdir}/*/LICENSE*
+@@ -598,12 +625,36 @@ rm -fr "${RPM_BUILD_ROOT}"
+ %{_udevlibdir}/*
+ %{_udevrulesdir}/*
+ 
++%files -n brltty-dracut
++/usr/lib/dracut/modules.d/99brltty
++%config(noreplace) %verify(not size md5 mtime) %{_sysconfdir}/brltty/Initramfs/dracut.conf
++%config(noreplace) %verify(not size md5 mtime) %{_sysconfdir}/brltty/Initramfs/cmdline
++
+ %files -n brlapi
+ %defattr(-,root,root)
+ %{_libdir}/libbrlapi.so.*
+ %{_datadir}/polkit-1/actions/org.a11y.brlapi.policy
+ %doc %{_docdir}/*/Manual-BrlAPI
+ 
++%files -n brlapi-utils
++%{_bindir}/xbrlapi
++%doc %{_mandir}/man1/xbrlapi.1.gz
++%{_datadir}/gdm/greeter/autostart/xbrlapi.desktop
++%{_sysconfdir}/X11/Xsession.d/60xbrlapi
++%{_bindir}/eutp
++%doc %{_mandir}/man1/eutp.1.gz
++%{_bindir}/vstp
++%doc %{_mandir}/man1/vstp.1.gz
++
++%files -n brlapi-devel
++%defattr(-,root,root)
++%{_libdir}/libbrlapi.a
++%{_libdir}/libbrlapi.so
++%{_includedir}/brlapi.h
++%{_includedir}/brlapi_*.h
++%doc %{_mandir}/man3/*
++%doc %{_docdir}/*/BrlAPIref
++
+ %files -n java-brlapi
+ @JAVA_JAR_DIR@/*
+ @JAVA_JNI_DIR@/*
+@@ -618,25 +669,6 @@ rm -fr "${RPM_BUILD_ROOT}"
+ @TCL_DIR@/brlapi-@api_release@/libbrlapi_tcl.so
+ @TCL_DIR@/brlapi-@api_release@/pkgIndex.tcl
+ 
+-%files -n brlapi-devel
+-%defattr(-,root,root)
+-%{_libdir}/libbrlapi.a
+-%{_libdir}/libbrlapi.so
+-%{_includedir}/brlapi.h
+-%{_includedir}/brlapi_*.h
+-%doc %{_mandir}/man3/*
+-%doc %{_docdir}/*/BrlAPIref
+-
+-%files -n brlapi-utils
+-%{_bindir}/xbrlapi
+-%{_bindir}/eutp
+-%{_bindir}/vstp
+-%doc %{_mandir}/man1/xbrlapi.1.gz
+-%doc %{_mandir}/man1/eutp.1.gz
+-%doc %{_mandir}/man1/vstp.1.gz
+-%{_sysconfdir}/X11/Xsession.d/60xbrlapi
+-%{_datadir}/gdm/greeter/autostart/xbrlapi.desktop
+-
+ 
+ %changelog
+ * Mon Feb 5 2018 Dave Mielke <Dave@Mielke.cc> 5.6
+diff --git a/configure.ac b/configure.ac
+index 8938c6b..b09fda8 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -38,15 +38,18 @@ AC_DEFINE_UNQUOTED([BRLAPI_REVISION], [${api_revision}],
+                    [Define this to be the API library revision number.])
+ 
+ BRLTTY_SUMMARY_BEGIN
+-brltty_build_directories=". Programs Documents Messages Android/Core Android/Application"
++brltty_build_directories=". Programs Documents Messages"
+ brltty_source_directory="`dirname "${0}"`"
+ brltty_manual_directories=""
+ 
+-for brltty_autostart_directory in `(cd "${brltty_source_directory}" && echo Autostart/*)`
++for brltty_directory in Autostart Initramfs Android
+ do
+-   test -f "${brltty_source_directory}/${brltty_autostart_directory}/Makefile.in" && {
+-      brltty_build_directories="${brltty_build_directories} ${brltty_autostart_directory}"
+-   }
++   for brltty_subdirectory in `echo "${brltty_source_directory}/${brltty_directory}/"*`
++   do
++      test -f "${brltty_subdirectory}/Makefile.in" && {
++         brltty_build_directories="${brltty_build_directories} ${brltty_subdirectory}"
++      }
++   done
+ done
+ 
+ for brltty_manual_directory in `(cd "${brltty_source_directory}" && echo Documents/Manual-*/*)`
+@@ -1957,7 +1960,7 @@ AC_OUTPUT([
+    Documents/BrlAPIref.doxy
+    Bindings/Lisp/brlapi.lisp
+    Bindings/Python/setup.py
+-   Android/Application/res/values/configured.xml:Android/Application/res.strings.in
+    Autostart/Systemd/brltty@.service
++   Android/Application/res/values/configured.xml:Android/Application/res.strings.in
+    ${brltty_make_files}
+ ])
