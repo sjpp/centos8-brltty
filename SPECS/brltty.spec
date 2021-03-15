@@ -47,6 +47,7 @@ Patch3: 0001-Add-support-for-eSpeak-NG.patch
 Patch4: brltty-5.6-libs-add-ldflags.patch
 Patch5: brltty-5.6-ocaml-add-flags.patch
 Patch6: brltty-5.6-add-dracut-support.patch
+Patch7: brltty-5.6-alsa-1.1.9-fix.patch
 Summary: Braille display driver for Linux/Unix
 BuildRequires: byacc, glibc-kernheaders, bluez-libs-devel, systemd
 BuildRequires: gettext, at-spi2-core-devel, alsa-lib-devel
@@ -239,6 +240,7 @@ pushd python2
 %patch4 -p1 -b .libs-add-ldflags
 %patch5 -p1 -b .ocaml-add-flags
 %patch6 -p1 -b .add-dracut-support
+%patch7 -p1 -b .alsa-1.1.9-fix
 
 # remove packaged binary file
 rm -f Programs/brltty-ktb
